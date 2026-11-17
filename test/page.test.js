@@ -117,7 +117,9 @@ test('an older revision says so in words, with the way to the latest', onSite(as
 
 test('the page says in words when a revision has no PDF', onSite(async (s) => {
   const { ada, key } = await withFeature(s);
-  assert.match((await ada.page(`/f/${key}`)).text, /This revision has no PDF\./);
+  const shown = (await ada.page(`/f/${key}`)).text;
+  assert.match(shown, /This revision has no PDF yet\./);
+  assert.doesNotMatch(shown, /Download PDF/);
   const r = await ada.page(`/f/${key}/r1/pack.pdf`);
   assert.equal(r.status, 404);
   assert.match(r.text, /This revision has no PDF\./);
@@ -131,6 +133,19 @@ test('the PDF comes as a download named for the feature, behind the same check',
   assert.match(r.headers.get('content-disposition'), /^attachment; filename="Freeze header r1\.pdf"/);
   assert.equal(await r.text(), '%PDF-made-up');
   assert.equal((await (await person(s, STU)).get(`/f/${key}/r1/pack.pdf`)).status, 403);
+}));
+
+test('More has a Download PDF link for the revision on screen, old ones included', onSite(async (s) => {
+  const { ada, key, token } = await withFeature(s, publishFields({ pdf }));
+  await publish(s, token, publishFields({ pdf: { ...pdf, data: '%PDF-second' } }));
+  const latest = (await ada.page(`/f/${key}`)).text;
+  assert.match(latest, new RegExp(`<a href="/f/${key}/r2/pack\\.pdf" download>Download PDF of revision 2</a>`));
+  const old = (await ada.page(`/f/${key}?r=1`)).text;
+  assert.match(old, new RegExp(`<a href="/f/${key}/r1/pack\\.pdf" download>Download PDF of revision 1</a>`));
+  const sam = await person(s, SAM);
+  await ada.post(`/f/${key}/shares`, { email: SAM });
+  assert.match((await sam.page(`/f/${key}`)).text, /Download PDF of revision 2/, 'someone it’s shared with gets it too');
+  assert.equal(await (await sam.get(`/f/${key}/r2/pack.pdf`)).text(), '%PDF-second');
 }));
 
 test('a title can’t break out of the download’s header', () => {

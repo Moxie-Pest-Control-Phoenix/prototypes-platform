@@ -258,3 +258,41 @@ test('the manifest is stored as sent', onSite(async (s) => {
   assert.match(page.text, /First look/);
   assert.match(page.text, /Changed/);
 }));
+
+// ---------- a PDF for a revision published without one ----------
+
+const pdfFor = (s, token, path, data = '%PDF-later') => {
+  const { body, type } = multipart(data === null ? {} : { pdf: { filename: 'pack.pdf', type: 'application/pdf', data } });
+  return withToken(s, token, path, { method: 'POST', headers: { 'content-type': type }, body });
+};
+
+test('a revision published without a PDF can be given one, once', onSite(async (s) => {
+  const { ada, token, key } = await withFeature(s);
+  await publish(s, token);
+  const r = await pdfFor(s, token, `/api/features/${key}/r1/pdf`);
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body, { key, revision: 1, pdf: `${SITE}/f/${key}/r1/pack.pdf` });
+  assert.equal(await (await ada.get(`/f/${key}/r1/pack.pdf`)).text(), '%PDF-later');
+  assert.match((await ada.page(`/f/${key}?r=1`)).text, /Download PDF of revision 1/);
+  assert.doesNotMatch((await ada.page(`/f/${key}`)).text, /Download PDF/, 'revision 2 still has none');
+  const again = await pdfFor(s, token, `/api/features/${key}/r1/pdf`, '%PDF-replacement');
+  assert.equal(again.status, 409);
+  assert.equal(await (await ada.get(`/f/${key}/r1/pack.pdf`)).text(), '%PDF-later', 'the first one stays');
+}));
+
+test('two PDFs at once for the same revision: one is kept, the other’s file is removed', onSite(async (s) => {
+  const { token, key } = await withFeature(s);
+  const both = await Promise.all([pdfFor(s, token, `/api/features/${key}/r1/pdf`, '%PDF-a'), pdfFor(s, token, `/api/features/${key}/r1/pdf`, '%PDF-b')]);
+  assert.deepEqual(both.map((b) => b.status).sort(), [200, 409]);
+  assert.equal([...s.blob.files.keys()].filter((b) => b.endsWith('pack.pdf')).length, 1);
+}));
+
+test('a PDF for a revision is refused without a token, for a revision that isn’t there, and with no file', onSite(async (s) => {
+  const { token, key } = await withFeature(s);
+  assert.equal((await pdfFor(s, 'ptp_nope', `/api/features/${key}/r1/pdf`)).status, 401);
+  assert.equal((await pdfFor(s, token, `/api/features/${key}/r9/pdf`)).status, 404);
+  assert.equal((await pdfFor(s, token, `/api/features/no-such-thing/r1/pdf`)).status, 404);
+  assert.equal((await pdfFor(s, token, `/api/features/${key}/r1/pdf`, null)).status, 400);
+  assert.equal((await pdfFor(s, token, `/api/features/${key}/r1/pdf`, Buffer.alloc(LIMITS.pdf + 1))).status, 413);
+  assert.equal((await revisions(s)).rows.find((x) => x.type === 'prototype').pdf_blob, null);
+}));

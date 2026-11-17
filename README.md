@@ -57,6 +57,7 @@ A Vercel request is capped at 4.5 MB, so that's the real limit on one publish, w
 | `lib/blob.js` | File storage, real and fake |
 | `migrations/` | The schema; `npm run migrate` applies it |
 | `site/routes-page.js` | The prototype page in its frame, the PDF, Requirements and Decisions |
+| `site/routes-publish.js` | `POST /api/publish`, and `POST /api/features/<key>/r<n>/pdf` for a revision published without a PDF |
 | `site/routes-notes.js` | Notes, pins, picks and settings from the page, with their validator |
 | `public/` | `site.css`, `site.js`, and `wrapper.js`: the site's side of the bridge to the sandboxed page |
 

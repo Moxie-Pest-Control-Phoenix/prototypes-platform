@@ -2,6 +2,9 @@
 // skill is the contract). Multipart, with a publish token. The first publish makes the feature; each
 // one after adds revision n+1. Requirements and decisions, when sent, take the same n.
 //
+// POST /api/features/<key>/r<n>/pdf: a PDF for a revision published without one, so every revision
+// can have one. A revision that already has a PDF keeps it: the site replaces nothing.
+//
 // Blobs are written first under a fresh id, then one transaction records everything, so two
 // publishes at once get different numbers and a failed publish leaves nothing behind.
 
@@ -9,9 +12,11 @@ import crypto from 'node:crypto';
 import { HttpError, readBody, sendJson } from './http.js';
 import { parseMultipart } from './multipart.js';
 import { iso } from './sessions.js';
+import { KEY as KEY_PART } from './routes-feature.js';
 
 export const LIMITS = { page: 5e6, pdf: 25e6, markdown: 1e6, manifest: 1e6, perHour: 60 };
 const MAX_REQUEST = LIMITS.page + LIMITS.pdf + 2 * LIMITS.markdown + LIMITS.manifest + 1e5;
+const MAX_PDF_REQUEST = LIMITS.pdf + 1e5;
 const KEY = /^[a-z0-9][a-z0-9-]{0,79}$/;
 const HOUR = 60 * 60 * 1000;
 
@@ -145,6 +150,32 @@ export default function publishRoutes(ctx) {
           await ctx.blob.remove([pageBlob, pdfBlob].filter(Boolean));
           throw err;
         }
+      },
+    },
+    {
+      method: 'POST', path: new RegExp(`^/api/features/${KEY_PART}/r(\\d{1,6})/pdf$`), auth: 'token',
+      async run({ req, res, m, note }) {
+        note.key = m[1];
+        const parts = parseMultipart(await readBody(req, { max: MAX_PDF_REQUEST }), req.headers['content-type']);
+        const pdf = file(parts, 'pdf', LIMITS.pdf);
+        if (!pdf) throw bad('The PDF is missing.');
+        const { rows } = await db.query(
+          `SELECT r.id, r.pdf_blob FROM revisions r JOIN documents d ON d.id = r.document_id JOIN features f ON f.id = d.feature_id
+            WHERE f.key = $1 AND d.type = 'prototype' AND r.n = $2`,
+          [m[1], Number(m[2])],
+        );
+        const revision = rows[0];
+        if (!revision) throw new HttpError(404, `There’s no revision ${m[2]} of ${m[1]}.`);
+        if (revision.pdf_blob) throw new HttpError(409, `Revision ${m[2]} already has a PDF.`);
+        const pdfBlob = `features/${m[1]}/${crypto.randomUUID()}/pack.pdf`;
+        await ctx.blob.put(pdfBlob, pdf, 'application/pdf');
+        // Only where there's still none: of two at once, the second is refused and its file removed.
+        const set = await db.query('UPDATE revisions SET pdf_blob = $2 WHERE id = $1 AND pdf_blob IS NULL RETURNING id', [revision.id, pdfBlob]);
+        if (!set.rows.length) {
+          await ctx.blob.remove([pdfBlob]);
+          throw new HttpError(409, `Revision ${m[2]} already has a PDF.`);
+        }
+        sendJson(res, 200, { key: m[1], revision: Number(m[2]), pdf: `${config.siteUrl}/f/${m[1]}/r${m[2]}/pack.pdf` });
       },
     },
   ];

@@ -102,8 +102,9 @@ function stageBar({ feature, person, revisions, revision, latest, notes }) {
         ${feature.ticket_url ? html`<a href="${feature.ticket_url}" rel="noopener noreferrer">${feature.ticket_key || 'Ticket'}</a> · ` : feature.ticket_key && `${feature.ticket_key} · `}
         Updated ${dateLabel(feature.updated_at)}${feature.archived_at && ' · Archived'}
       </p>
-      <p class="muted">Revision ${n}, published ${dateLabel(revision.published_at)}.${revision.has_pdf ? '' : ' This revision has no PDF.'} <span data-note-count>${count(notes, 'note')}</span>.</p>
+      <p class="muted">Revision ${n}, published ${dateLabel(revision.published_at)}.${revision.has_pdf ? '' : ' This revision has no PDF yet.'} <span data-note-count>${count(notes, 'note')}</span>.</p>
       <nav class="stage-links" aria-label="This feature">
+        ${revision.has_pdf && html`<a href="/f/${feature.key}/r${n}/pack.pdf" download>Download PDF of revision ${n}</a>`}
         <a href="/f/${feature.key}/requirements${suffix}">Requirements</a>
         <a href="/f/${feature.key}/decisions${suffix}">Decisions</a>
         ${person.admin && html`<a href="/f/${feature.key}/shares">Sharing</a>`}
