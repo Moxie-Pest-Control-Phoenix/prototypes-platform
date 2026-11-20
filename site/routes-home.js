@@ -14,7 +14,13 @@ const LIST = `SELECT f.key, f.title, f.ticket_key, f.archived_at, f.updated_at,
 export async function listFeatures(db, person) {
   const { rows } = person.admin
     ? await db.query(`${LIST} ORDER BY f.archived_at IS NOT NULL, f.updated_at DESC`)
-    : await db.query(`${LIST} WHERE f.archived_at IS NULL AND EXISTS (SELECT 1 FROM shares s WHERE s.feature_id = f.id AND s.email = $1 AND s.removed_at IS NULL) ORDER BY f.updated_at DESC`, [person.email]);
+    : await db.query(
+      `${LIST} WHERE f.archived_at IS NULL
+          AND (EXISTS (SELECT 1 FROM shares s WHERE s.feature_id = f.id AND s.email = $1 AND s.removed_at IS NULL)
+               OR EXISTS (SELECT 1 FROM viewers v WHERE v.email = $1 AND v.removed_at IS NULL))
+        ORDER BY f.updated_at DESC`,
+      [person.email],
+    );
   return rows;
 }
 

@@ -173,7 +173,7 @@ test('a signed-out change goes to sign in and changes nothing', onSite(async (s)
 test('healthz: open to anyone, with the migration number', onSite(async (s) => {
   const r = await browser(s.fetch).get('/healthz');
   assert.equal(r.status, 200);
-  assert.deepEqual(await r.json(), { ok: true, migration: '006-page-state' });
+  assert.deepEqual(await r.json(), { ok: true, migration: '007-viewers' });
 }));
 
 test('with a setting missing, every page says which, and healthz still answers', onSite(async (s) => {
@@ -187,14 +187,14 @@ test('with a setting missing, every page says which, and healthz still answers',
 test('migrations run clean twice: the second applies nothing', onSite(async (s) => {
   const again = await migrate(s.db);
   assert.deepEqual(again.applied, []);
-  assert.equal(again.already, 6);
+  assert.equal(again.already, 7);
 }));
 
 test('there is no role column, and no table the plan doesn’t name', onSite(async (s) => {
   const cols = (await s.db.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'people' AND table_schema = current_schema()")).rows.map((r) => r.column_name);
   assert.ok(!cols.includes('role'));
   const tables = (await s.db.query("SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema() ORDER BY 1")).rows.map((r) => r.table_name);
-  assert.deepEqual(tables, ['access_requests', 'choices', 'documents', 'features', 'notes', 'people', 'publish_tokens', 'revisions', 'schema_migrations', 'sessions', 'shares', 'sign_ins', 'views']);
+  assert.deepEqual(tables, ['access_requests', 'choices', 'documents', 'features', 'notes', 'people', 'publish_tokens', 'revisions', 'schema_migrations', 'sessions', 'shares', 'sign_ins', 'viewers', 'views']);
 }));
 
 test('logs carry route, status, person and key: no tokens, note text or emails', async () => {

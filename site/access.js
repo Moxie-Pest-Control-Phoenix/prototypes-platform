@@ -10,7 +10,8 @@ export const isAdmin = (person, config) => Boolean(person) && config.adminEmails
 /**
  * Whether this person may see this feature, or this document of it.
  *   admin    everything, archived features and admin-only documents included
- *   shared   the feature's people-facing documents, unless it is archived
+ *   shared   the feature's people-facing documents, unless it is archived (a share on this
+ *            feature, or a viewer added on the People page, who counts as shared on every feature)
  *   anyone   nothing: the page offers Request access
  */
 export function canSee(person, feature, document = null) {
@@ -23,7 +24,8 @@ export function canSee(person, feature, document = null) {
 /** The feature at this key, with `shared` answered for this person. Null when there is none. */
 export async function loadFeature(db, key, person) {
   const { rows } = await db.query(
-    `SELECT f.*, EXISTS (SELECT 1 FROM shares s WHERE s.feature_id = f.id AND s.email = $2 AND s.removed_at IS NULL) AS shared
+    `SELECT f.*, (EXISTS (SELECT 1 FROM shares s WHERE s.feature_id = f.id AND s.email = $2 AND s.removed_at IS NULL)
+                  OR EXISTS (SELECT 1 FROM viewers v WHERE v.email = $2 AND v.removed_at IS NULL)) AS shared
        FROM features f WHERE f.key = $1`,
     [key, person.email],
   );

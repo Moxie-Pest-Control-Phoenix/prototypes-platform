@@ -12,6 +12,13 @@ import { KEY } from './routes-feature.js';
 
 const EMAIL = /^[^@\s]{1,100}@[^@\s]{1,150}$/;
 
+/** What's wrong with an email typed to add someone, or null. Also used by the People page. */
+export function emailProblem(email, config) {
+  if (!EMAIL.test(email)) return 'Type an email address.';
+  if (!email.endsWith(`@${config.allowedDomain}`)) return `Only ${config.allowedDomain} accounts can sign in here.`;
+  return null;
+}
+
 export default function shareRoutes(ctx) {
   const { db, config, now } = ctx;
 
@@ -33,7 +40,7 @@ export default function shareRoutes(ctx) {
       title: `Sharing ${f.title}`, person, token,
       body: html`<p class="crumb"><a href="/f/${f.key}">← ${f.title}</a></p>
 <h1>Sharing</h1>
-<p class="muted">Admins always see this. Add anyone else by their Moxie email. Nobody gets an email, so send them the link yourself.</p>
+<p class="muted">Admins always see this, and so does anyone added on the <a href="/people">People</a> page. Add anyone else by their Moxie email. Nobody gets an email, so send them the link yourself.</p>
 <p class="linkline"><code>${link}</code> <button class="btn quiet" type="button" data-copy="${link}" hidden>Copy link</button></p>
 <form class="add" method="post" action="/f/${f.key}/shares">${formField(token)}
   <label for="email">Add a person</label>
@@ -64,8 +71,8 @@ ${shares.length
         const { res, person, form } = call;
         const f = await feature(call.m[1]);
         const email = String(form?.get('email') ?? '').trim().toLowerCase();
-        if (!EMAIL.test(email)) return page(call, f, { problem: 'Type an email address.', email });
-        if (!email.endsWith(`@${config.allowedDomain}`)) return page(call, f, { problem: `Only ${config.allowedDomain} accounts can sign in here.`, email });
+        const problem = emailProblem(email, config);
+        if (problem) return page(call, f, { problem, email });
         const t = iso(now());
         await db.tx(async (q) => {
           await q.query('INSERT INTO shares (feature_id, email, added_by, added_at) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING', [f.id, email, person.id, t]);

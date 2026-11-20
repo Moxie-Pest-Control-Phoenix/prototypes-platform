@@ -125,3 +125,59 @@ test('a share matches the address alone, so it works before the person ever sign
   assert.ok((await publish(s, token, publishFields({ key: 'orbit-300-other', title: 'Other' }))).status === 200);
   assert.equal((await hire.get('/f/orbit-300-other')).status, 403, 'and only for that feature');
 }));
+
+test('someone added on People sees every feature, before and after signing in, with no request', onSite(async (s) => {
+  const { ada, key, token } = await withFeature(s);
+  assert.equal((await ada.post('/people', { email: 'New.Hire@example.test' })).status, 302);
+  assert.ok((await publish(s, token, publishFields({ key: 'orbit-300-other', title: 'Other' }))).status === 200, 'a feature published after they were added');
+  const hire = await person(s, 'new.hire@example.test', 'New Hire');
+  for (const k of [key, 'orbit-300-other']) {
+    const r = await hire.page(`/f/${k}`);
+    assert.equal(r.status, 200, k);
+    assert.doesNotMatch(r.text, /Request access/, k);
+  }
+  const home = (await hire.page('/')).text;
+  assert.match(home, /Freeze header/);
+  assert.match(home, /Other/);
+  const people = (await ada.page('/people')).text;
+  assert.match(people, /New Hire/);
+  assert.match(people, /Every feature/);
+}));
+
+test('a People viewer gets what a shared person gets, and no more', onSite(async (s) => {
+  const { ada, key } = await withFeature(s);
+  await ada.post('/people', { email: SAM });
+  const sam = await person(s, SAM);
+  for (const path of [`/f/${key}/shares`, '/settings', '/people']) assert.equal((await sam.get(path)).status, 403, path);
+  assert.equal((await sam.post('/people', { email: STU })).status, 403, 'can’t add others');
+  await s.db.query('UPDATE features SET archived_at = now() WHERE key = $1', [key]);
+  assert.equal((await sam.get(`/f/${key}`)).status, 403, 'archived stays admin-only');
+  assert.doesNotMatch((await sam.page('/')).text, /Freeze header/);
+}));
+
+test('adding someone on People settles their open requests; removing them stops access at once', onSite(async (s) => {
+  const { ada, key } = await withFeature(s);
+  const stu = await person(s, STU);
+  await stu.post(`/f/${key}/request-access`);
+  assert.equal((await s.db.query('SELECT count(*)::int AS n FROM access_requests WHERE resolved_at IS NULL')).rows[0].n, 1);
+  await ada.post('/people', { email: STU });
+  assert.equal((await s.db.query('SELECT count(*)::int AS n FROM access_requests WHERE resolved_at IS NULL')).rows[0].n, 0);
+  assert.equal((await stu.get(`/f/${key}`)).status, 200);
+  await ada.post('/people', { email: STU }, {});
+  assert.equal((await s.db.query('SELECT count(*)::int AS n FROM viewers WHERE removed_at IS NULL')).rows[0].n, 1, 'adding twice keeps one');
+  await ada.post('/people', { email: STU, _method: 'DELETE' });
+  assert.equal((await stu.get(`/f/${key}`)).status, 403);
+  assert.equal((await s.db.query('SELECT count(*)::int AS n FROM viewers')).rows[0].n, 1, 'the row stays: the site deletes nothing');
+  await ada.post(`/f/${key}/shares`, { email: STU });
+  assert.equal((await stu.get(`/f/${key}`)).status, 200, 'a feature share still works on its own');
+}));
+
+test('People refuses a bad address, another domain, and an admin', onSite(async (s) => {
+  const ada = await person(s, ADA, 'Ada Admin');
+  for (const [email, says] of [['nope', /Type an email address/], ['who@elsewhere.test', /accounts can sign in here/], [ADA.toUpperCase(), /already see everything/]]) {
+    const r = await ada.post('/people', { email });
+    assert.equal(r.status, 400, email);
+    assert.match(await r.text(), says, email);
+  }
+  assert.equal((await s.db.query('SELECT count(*)::int AS n FROM viewers')).rows[0].n, 0);
+}));
